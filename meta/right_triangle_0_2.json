@@ -1,0 +1,16 @@
+{
+    "questionNumber": "1",
+    "questionText": "The lengths of the two legs of a right-angled triangle are 3 cm and 9 cm. Find the length of the hypotenuse.",
+    "givenValues": {
+        "base": 3,
+        "height": 9
+    },
+    "toFind": "hypotenuse",
+    "options": [
+        "10 cm",
+        "12 cm",
+        "15 cm",
+        "18 cm"
+    ],
+    "image_path": "images/right_triangle_0_2.png"
+}

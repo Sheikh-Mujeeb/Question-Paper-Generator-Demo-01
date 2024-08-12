@@ -10,10 +10,11 @@ from langchain_core.tools import Tool
 from langchain_experimental.utilities import PythonREPL
 
 from extractQuestions import extract_json_from_text
-from generateImage import get_updated_image
+from generateImage import get_new_image
+from helpers.saveQuestionImage import save_right_triangle
 from helpers.customPdf import PDF
 import os
-
+import json
 
 # from dotenv import load_dotenv
 
@@ -23,57 +24,35 @@ import os
 def generate_paper(curriculum, past_papers):
     llm = OllamaLLM(temperature=0.7, model="llama3.1:8b")
 
+    past_questions = preprocess_input(past_papers)
+
     # Define the prompt template with clear separation
     prompt_template_name = PromptTemplate(
         input_variables=['curriculum', 'past_papers'],
-        template="""From the Curriculum:
-    {curriculum}
+        template="""Task:
 
-    And Sample Past Paper Questions:
-    {past_papers}
+Generate two new multiple-choice questions based on the provided Curriculum. The new questions should be similar in structure to the provided sample questions
 
-    Output Format:
-    [
-        {{
-            "questionNumber": "1",
-            "questionText": "In a right-angled triangle, the lengths of the two legs are 5 cm and 12 cm. Find the length of the hypotenuse.",
-            "givenValues": [5, 12]
-            "options": ["13cm", "17cm", "7cm", "11cm"]
-        }},
-        {{
-            "questionNumber": "2",
-            "questionText": "The lengths of the two legs of a right-angled triangle are 3 cm and 9 cm. Find the length of the hypotenuse.",
-            "givenValues": [3, 9]
-            "options": ["10cm", "12cm", "15cm", "8cm"]
-        }}
-    ]
+{curriculum}
 
-    Generate two new questions from the Context provided similar to the Sample Quesitons provided where output should be in the template `Output Format` Provided"""
+Sample Questions Format:
+{past_papers}
+
+Instructions:
+
+Follow the format of the sample questions.
+Ensure the questions involve either finding the hypotenuse or one of the legs of a right-angled triangle using the Pythagorean Theorem.
+Provide the necessary values and multiple-choice options for each question.
+Maintain the JSON structure."""
     )
 
     # Initialize the chain
     name_chain = LLMChain(llm=llm, prompt=prompt_template_name, output_key="generatedPaper")
 
     # Call the chain with the correct inputs
-    response = name_chain({'curriculum': curriculum, 'past_papers': past_papers})
-
-    dummy_output = """Here is a single question:
-[
-	{
-		"questionNumber": "1",
-		"questionText": "In a right-angled triangle, the lengths of the two legs are 5 cm and 12 cm. Find the length of the hypotenuse.",
-		"givenValues": [5, 12],
-		"options": ["13cm", "17cm", "7cm", "11cm"]
-	},
-	{
-		"questionNumber": "2",
-		"questionText": "The lengths of the two legs of a right-angled triangle are 3 cm and 9 cm. Find the length of the hypotenuse.",
-		"givenValues": [3, 9],
-		"options": ["10cm", "12cm", "15cm", "8cm"]
-	}
-]"""
-
-    questions = extract_json_from_text(response["generatedPaper"])
+    response = name_chain({'curriculum': curriculum, 'past_papers': past_questions})
+    
+    questions = extract_json_from_text(response['generatedPaper'])
     if questions:
         pdf = PDF()
 
@@ -85,8 +64,7 @@ def generate_paper(curriculum, past_papers):
         pdf.set_author('Your Name')
 
         for question in questions:
-            base, height = question["givenValues"]
-            image_name = get_updated_image("./image_page_0.png", base, height, question["questionNumber"])
+            image_name = get_new_image(question['givenValues'], question['toFind'], question["questionNumber"])
             # Instantiate PDF class
 
             pdf.add_text(question["questionText"])
@@ -106,81 +84,120 @@ def generate_paper(curriculum, past_papers):
     # Get the current working directory
     current_directory = os.getcwd()
     # return response["generatedPaper"]
-    return f"{current_directory}\\sample.pdf"
+    return f"{current_directory}\\sample_1.pdf"
 
-def langchain_agent():
-    
-    llm = OllamaLLM(temperature=0.7, model="llama3.1:8b")
 
-    tools = load_tools(["wikipedia", "llm-math"], llm = llm)
+def preprocess_input(past_papers):
+    llm = OllamaLLM(temperature=0.7, model="gemma2:2b")
 
-    agent = initialize_agent( tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose= True)
-
-    reuslt = agent.run("What is the average age of a dog? Multiply the age by 3")
-
-def lc_tool_calling():
-    # Define a simple prompt for code execution
-    llm = OllamaLLM(temperature=0.7, model="llama3.1:8b")
-
-    code_prompt = PromptTemplate(
-        input_variables=["code"],
+    # Define the prompt template with clear separation
+    preprocess_prompt_template = PromptTemplate(
+        input_variables=['past_papers'],
         template="""
-        You are a Python interpreter. Execute the following code and provide the output:
-        {code}
-        """,
+You will be provided with a list of mathematical questions. Your task is to extract the key information from each question, such as the quantities given, what needs to be found, and the multiple-choice options. Then, organize this information in a structured JSON format with the following attributes:
+
+questionNumber: The number of the question.
+questionText: The full text of the question.
+givenValues: A dictionary of the values provided in the question (e.g., base, height, radius, etc.).
+toFind: The specific value or concept that needs to be determined (e.g., hypotenuse, area, length, etc.).
+options: A list of the multiple-choice options provided.
+
+Example Questions:
+In a right-angled triangle, the lengths of the two legs are 5 cm and 12 cm. Find the length of the hypotenuse.
+
+a) 13 cm
+b) 17 cm
+c) 7 cm
+d) 11 cm
+In a right-angled triangle, one leg is 8 cm and the hypotenuse is 15 cm. Find the length of the other leg.
+
+a) 7 cm
+b) 9 cm
+c) 11 cm
+d) 13 cm
+
+Example Output:
+[
+	{{
+		"questionNumber": "1",
+		"questionText": "In a right-angled triangle, the lengths of the two legs are 5 cm and 12 cm. Find the length of the hypotenuse.",
+		"givenValues": {{"base": 5, "height": 12}},
+		"toFind": "hypotenuse",
+		"options": ["13 cm", "17 cm", "7 cm", "11 cm"]
+	}},
+	{{
+		"questionNumber": "2",
+		"questionText": "In a right-angled triangle, one leg is 8 cm and the hypotenuse is 15 cm. Find the length of the other leg.",
+		"givenValues": {{"base": 8, "hypotenuse": 15}},
+		"toFind": "height",
+		"options": ["7 cm", "9 cm", "11 cm", "13 cm"]
+	}}
+]    
+Given Questions:
+{past_papers}
+
+Instructions:
+
+For each question, carefully extract and categorize the numerical values or terms provided.
+Identify what needs to be calculated or determined, and categorize this under toFind.
+List the options exactly as they are provided, in the same order.
+Organize everything in a JSON format as described above.
+Provide only the output no additional details or explanations."""
     )
+
+    # Initialize the chain
+    name_chain = LLMChain(llm=llm, prompt=preprocess_prompt_template, output_key="preprocessedQuestions")
+
+    # Call the chain with the correct inputs
+    response = name_chain({'past_papers': past_papers})
+
+    dummy_output = """Here is a single question:
+[
+  {
+    "questionNumber": "1",
+    "questionText": "The hypotenuse of a right-angled triangle is 16 cm and one leg is 3 cm. Find the length of the other leg.",
+    "givenValues": {"base": 3, "hypotenuse": 16},
+    "toFind": "height",
+    "options": ["13 cm", "15 cm", "11 cm", "9 cm"]
+  }
+]"""
+    folder_path = "meta"
+    questions = extract_json_from_text(response['preprocessedQuestions'])
+    if questions:
+        for question in questions:
+            givenValues = question["givenValues"]
+            base = None
+            height = None
+            hypotenuse = None
+            if "base" in givenValues:
+                base = givenValues['base']
+            if "height" in givenValues:
+                height = givenValues['height']
+            if "hypotenuse" in givenValues:
+                hypotenuse = givenValues['hypotenuse']
+            
+            image_path = save_right_triangle(base, height, hypotenuse, question_number=question['questionNumber'])
+
+            question["image_path"] = image_path
+
+            # Specify the filename
+            filename = f"{folder_path}/{os.path.splitext(os.path.basename(image_path))[0]}.json"
+
+            # Write the list of dictionaries to a JSON file
+            with open(filename, 'w') as json_file:
+                json.dump(question, json_file, indent=4)
+
+            print(f"{question} has been written to {filename}")
     
-    python_repl = PythonREPL()
-
-    # Create a tool for code execution
-    code_tool = Tool(
-        name="PythonCodeExecutor",
-        func=lambda code: exec(code, globals()),
-        description="Executes Python code",
-    )
-
-    repl_tool = Tool(
-        name="python_repl",
-        description="A Python shell. Use this to execute python commands. Input should be a valid python command. If you want to see the output of a value, you should print it out with `print(...)`.",
-        func=python_repl.run,
-    )
-
-    # Initialize the agent
-    agent = initialize_agent(
-        tools=[repl_tool],
-        code_prompt= code_prompt,
-        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        llm=llm,
-        verbose=True
-    )
-
-    # Example query
-    query = "What is the answer of 2 + 2?"
-
-    code = """import matplotlib.pyplot as plt
-    import math
-
-    def plot_right_triangle(base, height, question_number):
-        plt.figure()
-        plt.plot([0, base], [0, 0], 'k')  # Base
-        plt.plot([0, 0], [0, height], 'k')  # Height
-        plt.plot([0, base], [height, 0], 'k')  # Hypotenuse
-        plt.text(base / 2, -0.5, f'{base} cm', ha='center')
-        plt.text(-0.5, height / 2, f'{height} cm', va='center', rotation='vertical')
-        plt.xlim(-1, base + 1)
-        plt.ylim(-1, height + 1)
-        plt.axis('off')
-        # plt.title('Right Triangle')
-        plt.savefig(f'right_triangle_{question_number}.png')  # Save as image
-        #plt.close()
-
-    # Test the function
-    plot_right_triangle(30, 4, 1)"""
-
-    # Generate a response
-    print(agent.run(code))
-
+    return questions
 
 if __name__ == "__main__":
     # langchain_agent()
-    print(lc_tool_calling())
+#     print(preprocess_input("""The lengths of the two legs of a right-angled triangle are 3 cm and 9 cm. Find the length of the hypotenuse.
+
+# a) 10 cm
+# b) 12 cm
+# c) 15 cm
+# d) 18 cm"""))
+    generate_paper("", "")
+    

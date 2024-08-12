@@ -3,18 +3,10 @@ import sys
 import signal
 import gradio as gr
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_helper import generate_paper
+from langchain_helper import generate_paper, preprocess_input
 import fitz
 
 def process_csv(curriculum, past_papers):
-    # loader = PyPDFLoader(curriculum)
-    # pages = loader.load_and_split()
-    # curriculum_text =  pages[0].page_content
-
-    
-    # loader = PyPDFLoader(past_papers)
-    # pages = loader.load_and_split()
-    # past_papers_text =  pages[0].page_content
 
     cr_doc = fitz.open(curriculum)
     pp_doc = fitz.open(past_papers)
@@ -24,22 +16,20 @@ def process_csv(curriculum, past_papers):
 
     curriculum_text = cr_page.get_text()
     past_papers_text = pp_page.get_text()
-    image_list = pp_page.get_images(full=True)
+    # image_list = pp_page.get_images(full=True)
 
-    # Iterate over each image
-    for image_index, img in enumerate(image_list):
-        xref = img[0]
-        base_image = pp_doc.extract_image(xref)
-        image_bytes = base_image["image"]
-        image_ext = base_image["ext"]
+    # # Iterate over each image
+    # for image_index, img in enumerate(image_list):
+    #     xref = img[0]
+    #     base_image = pp_doc.extract_image(xref)
+    #     image_bytes = base_image["image"]
+    #     image_ext = base_image["ext"]
         
-        # Save the image
-        with open(f"image_page_{image_index}.{image_ext}", "wb") as img_file:
-            img_file.write(image_bytes)
+    #     # Save the image
+    #     with open(f"image_page_{image_index}.{image_ext}", "wb") as img_file:
+    #         img_file.write(image_bytes)
 
-    filePath =  generate_paper(curriculum_text, past_papers_text)
-
-    return filePath
+    return generate_paper(curriculum_text, past_papers_text)
 
 def main():
     try:
